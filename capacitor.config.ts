@@ -40,7 +40,7 @@ const config: CapacitorConfig = {
     backgroundColor: "#FFFFFF",
     allowMixedContent: false, // Set to false for production
     captureInput: true,
-    webContentsDebuggingEnabled: false // Set to false for production
+    webContentsDebuggingEnabled: false // Use the modern bridge for better performance
   }
 };
 

@@ -5,7 +5,14 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthProvider } from "@/contexts/auth-context";
 import { Toaster } from "@/components/ui/toaster";
+import dynamic from 'next/dynamic';
 import "./globals.css";
+
+// Dynamically import the Capacitor integration component to prevent SSR issues
+const CapacitorIntegration = dynamic(
+  () => import('@/components/CapacitorIntegration'),
+  { ssr: false }
+);
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -58,6 +65,8 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <AuthProvider>
+          {/* Add the Capacitor integration component */}
+          <CapacitorIntegration />
           {children}
           <Toaster />
         </AuthProvider>
@@ -67,7 +76,3 @@ export default function RootLayout({
     </html>
   );
 }
-
-
-
-import './globals.css'
