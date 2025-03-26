@@ -1,12 +1,12 @@
 import { useState } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  MobileDialog,
+  MobileDialogContent,
+  MobileDialogDescription,
+  MobileDialogFooter,
+  MobileDialogHeader,
+  MobileDialogTitle,
+} from "@/components/ui/mobile-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -166,14 +166,14 @@ const PasswordChangePopup: React.FC<PasswordChangePopupProps> = ({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && handleDialogClose()}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>Change Password</DialogTitle>
-          <DialogDescription>
+    <MobileDialog open={isOpen} onOpenChange={(open) => !open && handleDialogClose()}>
+      <MobileDialogContent className="sm:max-w-[425px]">
+        <MobileDialogHeader>
+          <MobileDialogTitle>Change Password</MobileDialogTitle>
+          <MobileDialogDescription>
             Enter your current password and a new password.
-          </DialogDescription>
-        </DialogHeader>
+          </MobileDialogDescription>
+        </MobileDialogHeader>
         
         {status === "success" ? (
           <div className="py-6 space-y-4">
@@ -265,8 +265,8 @@ const PasswordChangePopup: React.FC<PasswordChangePopupProps> = ({
             </div>
           </form>
         )}
-      </DialogContent>
-    </Dialog>
+      </MobileDialogContent>
+    </MobileDialog>
   );
 };
 

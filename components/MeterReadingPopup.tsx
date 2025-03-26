@@ -1,16 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  MobileDialog,
+  MobileDialogContent,
+  MobileDialogDescription,
+  MobileDialogFooter,
+  MobileDialogHeader,
+  MobileDialogTitle,
+} from "@/components/ui/mobile-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Upload, CheckCircle, AlertCircle, Info, Camera, Image as ImageIcon, MapPin } from "lucide-react";
+import { Loader2, Upload, CheckCircle, AlertCircle, Info, Camera, Image as ImageIcon, MapPin, X } from "lucide-react";
 import { supabase, checkStorageBucket } from "@/lib/supabaseClient";
 import imageCompression from "browser-image-compression";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -434,183 +434,189 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
   }, [type]);
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {type === "check-in" ? "Check-in Meter Reading" : "Check-out Meter Reading"}
-          </DialogTitle>
-          <DialogDescription>
-            Please enter the current meter reading of your vehicle
-            {type === "check-in" ? " before starting your journey." : "."}
-          </DialogDescription>
-        </DialogHeader>
+    <MobileDialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <MobileDialogContent className="overflow-y-auto max-h-[90vh]">
+        <MobileDialogHeader>
+          <MobileDialogTitle>
+            {type === "check-in" ? "Check-In" : "Check-Out"} Meter Reading
+          </MobileDialogTitle>
+          <MobileDialogDescription>
+            Please enter the current meter reading and take or upload a photo as evidence.
+          </MobileDialogDescription>
+        </MobileDialogHeader>
 
-        <div className="space-y-4 py-4">
+        {/* Error message */}
+        {error && (
+          <div className="bg-red-50 p-3 rounded-md flex items-start space-x-2 text-sm text-red-800 mb-4">
+            <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div>{error}</div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {/* Meter reading input */}
           <div className="space-y-2">
-            <Label htmlFor="meter-reading">Meter Reading (km)</Label>
+            <Label htmlFor="meterReading" className="text-sm font-medium">
+              Meter Reading (km)
+            </Label>
             <Input
-              id="meter-reading"
+              id="meterReading"
               type="number"
               min="0"
-              placeholder="Enter current meter reading"
+              step="0.01"
               value={meterReading}
               onChange={(e) => setMeterReading(e.target.value)}
-              disabled={isSubmitting}
+              placeholder="Enter current meter reading"
+              className="w-full"
             />
           </div>
 
-          {/* Location sharing option */}
-          <div className="flex items-center justify-between space-x-2 py-3">
+          {/* Share location toggle */}
+          <div className="flex items-center justify-between space-x-2 py-2">
             <div className="flex items-center space-x-2">
-              <MapPin className="h-4 w-4 text-[#228B22]" />
+              <MapPin className="h-4 w-4 text-muted-foreground" />
               <Label htmlFor="share-location" className="text-sm font-medium">
-                Share my location
+                Share My Location
               </Label>
             </div>
             <Switch
               id="share-location"
               checked={shareLocation}
               onCheckedChange={setShareLocation}
-              disabled={isSubmitting || !navigator.geolocation}
             />
           </div>
-          
-          {shareLocation && (
-            <div className="text-sm">
-              {geolocation.loading ? (
-                <div className="flex items-center text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin mr-2" />
-                  Acquiring location...
-                </div>
-              ) : geolocation.error ? (
-                <div className="flex items-center text-destructive">
-                  <AlertCircle className="h-3 w-3 mr-2" />
-                  {geolocation.error}
-                </div>
-              ) : geolocation.latitude && geolocation.longitude ? (
-                <div className="flex items-center text-muted-foreground">
-                  <CheckCircle className="h-3 w-3 mr-2 text-green-500" />
-                  Location acquired
-                </div>
-              ) : (
-                <div className="flex items-center text-muted-foreground">
-                  <Info className="h-3 w-3 mr-2" />
-                  No location available
-                </div>
-              )}
-            </div>
-          )}
 
-          <div className="mt-4">
-            <Label>Odometer Photo (Optional)</Label>
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2">
-              <TabsList className="grid grid-cols-2 mb-2">
-                <TabsTrigger value="camera" disabled={isSubmitting || !checkCameraSupport()}>
+          {/* Image upload/capture tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="upload">
+                <div className="flex items-center">
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload
+                </div>
+              </TabsTrigger>
+              <TabsTrigger value="camera">
+                <div className="flex items-center">
                   <Camera className="h-4 w-4 mr-2" />
                   Camera
-                </TabsTrigger>
-                <TabsTrigger value="preview" disabled={isSubmitting || !imagePreview}>
-                  <ImageIcon className="h-4 w-4 mr-2" />
-                  Preview
-                </TabsTrigger>
-              </TabsList>
+                </div>
+              </TabsTrigger>
+            </TabsList>
 
-              <TabsContent value="camera" className="mt-2">
-                <div className="flex flex-col gap-2">
-                  <div className="relative border border-input rounded-md overflow-hidden bg-black">
-                    <video 
+            <TabsContent value="upload" className="space-y-4">
+              <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center">
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <ImageIcon className="h-8 w-8 text-gray-400" />
+                  <div className="text-sm text-gray-500">
+                    Drag and drop your image here or click to browse
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    onChange={handleFileChange}
+                  />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="camera" className="space-y-4">
+              <div className="relative bg-gray-100 rounded-lg overflow-hidden aspect-video">
+                {cameraStream ? (
+                  <>
+                    <video
                       ref={videoRef}
                       autoPlay
                       playsInline
-                      className="w-full h-auto"
-                      style={{ maxHeight: "240px" }}
-                    ></video>
-                  </div>
-                  <Button 
-                    type="button" 
-                    onClick={capturePhoto} 
-                    disabled={isSubmitting || !cameraStream}
-                    className="mt-2"
-                  >
-                    <Camera className="h-4 w-4 mr-2" />
-                    Capture Photo
-                  </Button>
-                  {!hasCameraSupport && (
-                    <div className="text-sm text-amber-600 flex items-center mt-2">
-                      <AlertCircle className="h-3 w-3 mr-1" />
-                      Camera not supported on this device
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-              
-              {imagePreview && (
-                <TabsContent value="preview" className="mt-2">
-                  <div className="relative rounded-md overflow-hidden border border-input">
-                    <img 
-                      src={imagePreview} 
-                      alt="Odometer preview" 
-                      className="w-full h-auto object-contain"
-                      style={{ maxHeight: "240px" }}
+                      className="w-full h-full object-cover"
                     />
+                    <button
+                      type="button"
+                      onClick={capturePhoto}
+                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white rounded-full p-3 shadow-lg"
+                    >
+                      <div className="w-6 h-6 rounded-full border-2 border-gray-800" />
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full p-4">
+                    <Camera className="h-8 w-8 text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-500 text-center">
+                      Click to access your camera
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={startCamera}
+                    >
+                      Start Camera
+                    </Button>
                   </div>
-                  <div className="text-sm text-green-600 flex items-center mt-2">
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    Photo selected
-                  </div>
-                </TabsContent>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          {/* Image preview */}
+          {imagePreview && (
+            <div className="relative mt-4">
+              <div className="relative bg-gray-100 rounded-lg overflow-hidden">
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  className="w-full h-auto object-contain max-h-[200px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageFile(null);
+                    setImagePreview(null);
+                  }}
+                  className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {compressionStatus && (
+                <div className="mt-2 text-xs text-gray-500">
+                  <Info className="inline h-3 w-3 mr-1" />
+                  {compressionStatus}
+                </div>
               )}
-            </Tabs>
-          </div>
-          
-          {error && (
-            <div className="bg-red-50 p-2 rounded-md text-red-600 text-sm flex items-start">
-              <AlertCircle className="h-4 w-4 mt-0.5 mr-2 flex-shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-          
-          {compressionStatus && !error && (
-            <div className="bg-blue-50 p-2 rounded-md text-blue-600 text-sm flex items-start">
-              <Info className="h-4 w-4 mt-0.5 mr-2 flex-shrink-0" />
-              <span>{compressionStatus}</span>
             </div>
           )}
         </div>
 
-        <DialogFooter className="flex flex-col sm:flex-row gap-2">
+        <MobileDialogFooter className="sm:justify-between mt-6">
           <Button
             type="button"
             variant="outline"
             onClick={onClose}
             disabled={isSubmitting}
-            className="sm:w-full"
           >
             Cancel
           </Button>
           <Button
-            type="submit"
+            type="button"
             onClick={handleSubmit}
             disabled={isSubmitting || !meterReading}
-            className="sm:w-full bg-[#228B22] hover:bg-[#1a6b1a]"
+            className={isSubmitting ? "opacity-70" : ""}
           >
             {isSubmitting ? (
-              <div className="flex items-center">
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                {submissionStage || "Processing..."}
-              </div>
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {submissionStage ?? "Submitting..."}
+              </>
             ) : (
-              <div className="flex items-center">
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Submit
-              </div>
+              "Submit"
             )}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </MobileDialogFooter>
+      </MobileDialogContent>
+    </MobileDialog>
   );
 };
 
-export default MeterReadingPopup; 
+export default MeterReadingPopup;

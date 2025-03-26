@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  MobileDialog,
+  MobileDialogContent,
+  MobileDialogDescription,
+  MobileDialogFooter,
+  MobileDialogHeader,
+  MobileDialogTitle,
+} from "@/components/ui/mobile-dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
@@ -394,19 +394,19 @@ const AvatarUploadPopup: React.FC<AvatarUploadPopupProps> = ({
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={(open) => {
+      <MobileDialog open={isOpen} onOpenChange={(open) => {
         if (!open && !isSubmitting) {
           stopCamera();
           onClose();
         }
-      }} className="z-50">
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Update Profile Picture</DialogTitle>
-            <DialogDescription>
+      }}>
+        <MobileDialogContent className="sm:max-w-[425px]">
+          <MobileDialogHeader>
+            <MobileDialogTitle>Update Profile Picture</MobileDialogTitle>
+            <MobileDialogDescription>
               Upload a new profile picture or take a photo with your camera.
-            </DialogDescription>
-          </DialogHeader>
+            </MobileDialogDescription>
+          </MobileDialogHeader>
           
           <div className="flex justify-center py-4">
             <Avatar className="h-32 w-32">
@@ -524,7 +524,7 @@ const AvatarUploadPopup: React.FC<AvatarUploadPopupProps> = ({
             </div>
           )}
           
-          <DialogFooter className="mt-6">
+          <MobileDialogFooter className="mt-6">
             <Button 
               variant="outline" 
               onClick={() => {
@@ -551,9 +551,9 @@ const AvatarUploadPopup: React.FC<AvatarUploadPopupProps> = ({
                 )}
               </Button>
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </MobileDialogFooter>
+        </MobileDialogContent>
+      </MobileDialog>
     </>
   );
 };

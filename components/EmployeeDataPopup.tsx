@@ -1,12 +1,12 @@
 import { useState } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  MobileDialog,
+  MobileDialogContent,
+  MobileDialogDescription,
+  MobileDialogHeader,
+  MobileDialogTitle,
+  MobileDialogTrigger,
+} from "@/components/ui/mobile-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -270,19 +270,19 @@ const EmployeeDataPopup: React.FC<EmployeeDataPopupProps> = ({ employee }) => {
   };
   
   return (
-    <Dialog>
-      <DialogTrigger asChild>
+    <MobileDialog>
+      <MobileDialogTrigger asChild>
         <Button variant="link" className="p-0 h-auto font-medium text-left">
           {employee.name}
         </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{employee.name}'s Work Data</DialogTitle>
-          <DialogDescription>
+      </MobileDialogTrigger>
+      <MobileDialogContent className="max-w-3xl">
+        <MobileDialogHeader>
+          <MobileDialogTitle>{employee.name}'s Work Data</MobileDialogTitle>
+          <MobileDialogDescription>
             View work hours and attendance for this employee.
-          </DialogDescription>
-        </DialogHeader>
+          </MobileDialogDescription>
+        </MobileDialogHeader>
         
         <WorkDatesSelector onDatesSelected={fetchWorkData} />
         
@@ -291,8 +291,8 @@ const EmployeeDataPopup: React.FC<EmployeeDataPopupProps> = ({ employee }) => {
         ) : (
           <WorkSummaryDisplay summaries={summaries} employee={employee} />
         )}
-      </DialogContent>
-    </Dialog>
+      </MobileDialogContent>
+    </MobileDialog>
   );
 };
 
