@@ -6,9 +6,9 @@ const config: CapacitorConfig = {
   webDir: '.next',
   server: {
     androidScheme: 'https',
-    // For development testing, use this to point to your development server
-    url: 'http://10.0.2.2:3000', // This connects to localhost from Android emulator
-    cleartext: true
+    // Point to Vercel deployment
+    url: 'https://yamkar-4-2.vercel.app', // Update this with your actual Vercel URL when deployed
+    cleartext: false
   },
   plugins: {
     SplashScreen: {
@@ -38,9 +38,9 @@ const config: CapacitorConfig = {
   android: {
     // Android specific configuration
     backgroundColor: "#FFFFFF",
-    allowMixedContent: true, // For development
+    allowMixedContent: false, // Set to false for production
     captureInput: true,
-    webContentsDebuggingEnabled: true, // For development
+    webContentsDebuggingEnabled: false // Set to false for production
   }
 };
 
