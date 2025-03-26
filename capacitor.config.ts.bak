@@ -1,0 +1,71 @@
+import { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  appId: 'com.yamkar.app',
+  appName: 'Yamkar',
+  webDir: 'out', // The directory of your built web assets (using 'out' for Next.js with export)
+  server: {
+    androidScheme: 'https',
+    // Allow cleartext traffic only in development (if needed)
+    allowNavigation: process.env.NODE_ENV === 'development' ? ['http://localhost:*'] : []
+  },
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 2000,
+      launchAutoHide: true,
+      backgroundColor: "#FFFFFF",
+      androidSplashResourceName: "splash",
+      androidScaleType: "CENTER_CROP",
+      showSpinner: false,
+      splashFullScreen: true,
+      splashImmersive: true
+    },
+    CapacitorHttp: {
+      enabled: true
+    },
+    CapacitorCookies: {
+      enabled: true // Enable cookies for auth
+    },
+    Geolocation: {
+      // Android-specific configuration
+      permissions: {
+        request: true, // Ask for permission when needed
+        requireAlways: true // Require background permission
+      }
+    }
+  },
+  android: {
+    // Android specific configuration
+    backgroundColor: "#FFFFFF",
+    allowMixedContent: false,
+    captureInput: true,
+    webContentsDebuggingEnabled: process.env.NODE_ENV === 'development',
+    hideLogs: process.env.NODE_ENV === 'production',
+    // Handle deep links
+    intentFilters: [
+      {
+        action: "VIEW",
+        autoVerify: true,
+        data: {
+          scheme: "https",
+          host: "*.yamkar.app",
+          pathPrefix: "/"
+        },
+        category: ["BROWSABLE", "DEFAULT"]
+      }
+    ]
+  },
+  ios: {
+    // iOS specific configuration
+    contentInset: "always",
+    allowsLinkPreview: false,
+    scrollEnabled: true,
+    backgroundColor: "#FFFFFF",
+    webContentsDebuggingEnabled: process.env.NODE_ENV === 'development',
+    preferredContentMode: "mobile",
+    // Handle universal links
+    limitsNavigationsToAppBoundDomains: true
+  }
+};
+
+export default config;

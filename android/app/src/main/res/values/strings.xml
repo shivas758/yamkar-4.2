@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Yamkar</string>
+    <string name="title_activity_main">Yamkar</string>
+    <string name="package_name">com.yamkar.app</string>
+    <string name="custom_url_scheme">com.yamkar.app</string>
+</resources>
