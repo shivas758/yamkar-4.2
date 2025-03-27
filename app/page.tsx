@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Leaf } from "lucide-react"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
+import { Capacitor } from '@capacitor/core'
 
 type FormData = {
   phone: string
@@ -21,16 +22,20 @@ export default function LoginPage() {
   const { login, user } = useAuth()
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const router = useRouter();
+  
+  // Check if running in Capacitor (native app)
+  const isNative = Capacitor.isNativePlatform();
 
   useEffect(() => {
-    if (isLoading) {
+    if (isSubmitting) {
       return;
     }
     if (user) {
       router.push(`/${user.role}`);
     }
-  }, [user, router, isLoading]);
+  }, [user, router, isSubmitting]);
 
   const form = useForm<FormData>({
     resolver: zodResolver(loginSchema),
@@ -41,25 +46,78 @@ export default function LoginPage() {
   })
 
   const onSubmit = async (data: FormData) => {
+    if (isSubmitting) return; // Prevent multiple submissions
+    
+    setIsLoading(true);
+    setIsSubmitting(true);
+    
+    // Create a timeout promise that rejects after 15 seconds
+    const timeoutPromise = new Promise((_, reject) => {
+      const id = setTimeout(() => {
+        clearTimeout(id);
+        reject(new Error("Login timed out. Please try again."));
+      }, 15000); // 15 seconds timeout
+    });
+    
     try {
-      setIsLoading(true)
-      await login(data.phone, data.password)
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("pending admin approval")) {
+      // Race the login against the timeout
+      await Promise.race([
+        login(data.phone, data.password),
+        timeoutPromise
+      ]);
+      
+      // If we're in the native app, show a success toast
+      if (isNative) {
         toast({
-          title: "Account Pending Approval",
-          description: "Your account is pending admin approval. Please wait for approval before logging in.",
-          variant: "destructive",
-        })
+          title: "Login Successful",
+          description: "You have been logged in successfully.",
+        });
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes("pending admin approval")) {
+          toast({
+            title: "Account Pending Approval",
+            description: "Your account is pending admin approval. Please wait for approval before logging in.",
+            variant: "destructive",
+          });
+        } else if (error.message.includes("timed out")) {
+          toast({
+            title: "Login Timeout",
+            description: "The login process is taking longer than expected. Your login may still complete in the background.",
+            variant: "destructive",
+          });
+          
+          // Special handling for timeouts in the native app
+          if (isNative) {
+            toast({
+              title: "Try Again",
+              description: "Please close the app and try again. Your login may have succeeded in the background.",
+            });
+          }
+        } else {
+          toast({
+            title: "Login Failed",
+            description: error.message,
+            variant: "destructive",
+          });
+        }
       } else {
         toast({
           title: "Error",
-          description: error instanceof Error ? error.message : "Login failed",
+          description: "An unexpected error occurred during login.",
           variant: "destructive",
-        })
+        });
       }
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
+      // Keep isSubmitting true if we're in a Capacitor app to prevent multiple login attempts
+      // which could cause state issues
+      if (!isNative) {
+        setIsSubmitting(false);
+      }
     }
   }
 
@@ -89,6 +147,7 @@ export default function LoginPage() {
                         {...field}
                         type="tel"
                         maxLength={10}
+                        disabled={isLoading || isSubmitting}
                       />
                     </FormControl>
                     <FormMessage />
@@ -108,7 +167,7 @@ export default function LoginPage() {
                         type="password"
                         placeholder="Enter your password"
                         className="w-full border-[#D3D3D3] focus:border-[#228B22] focus:ring-[#228B22]"
-                        disabled={isLoading}
+                        disabled={isLoading || isSubmitting}
                       />
                     </FormControl>
                     <FormMessage />
@@ -116,8 +175,8 @@ export default function LoginPage() {
                 )}
               />
 
-              <Button type="submit" className="w-full bg-[#228B22] hover:bg-[#1a6b1a] text-white" disabled={isLoading}>
-                {isLoading ? "Logging in..." : "Login"}
+              <Button type="submit" className="w-full bg-[#228B22] hover:bg-[#1a6b1a] text-white" disabled={isLoading || isSubmitting}>
+                {isLoading ? "Logging in..." : isSubmitting ? "Please wait..." : "Login"}
               </Button>
             </form>
           </Form>

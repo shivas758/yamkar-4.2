@@ -10,10 +10,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Upload, CheckCircle, AlertCircle, Info, Camera, Image as ImageIcon, MapPin, X } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle, Info, Camera, X, MapPin } from "lucide-react";
 import { supabase, checkStorageBucket } from "@/lib/supabaseClient";
 import imageCompression from "browser-image-compression";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { useGeolocation } from "@/hooks/useGeolocation";
 
@@ -43,7 +42,6 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
     exists: false, 
     checked: false 
   });
-  const [activeTab, setActiveTab] = useState<string>("upload");
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [shareLocation, setShareLocation] = useState<boolean>(true);
@@ -63,9 +61,10 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
     };
   }, [isOpen]);
 
-  // Effect to handle camera stream when tab changes or dialog closes
+  // Effect to handle camera stream when dialog opens/closes
   useEffect(() => {
-    if (activeTab === "camera" && isOpen) {
+    if (isOpen) {
+      // Start camera automatically when dialog opens
       startCamera();
     } else {
       stopCamera();
@@ -75,7 +74,7 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
     return () => {
       stopCamera();
     };
-  }, [activeTab, isOpen]);
+  }, [isOpen]);
 
   // Additional effect to ensure camera is stopped when component unmounts
   useEffect(() => {
@@ -127,7 +126,6 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
     } catch (err: any) {
       console.error("Error accessing camera:", err);
       setError(`Camera access error: ${err.message}. Please try using image upload instead.`);
-      setActiveTab("upload");
     }
   };
 
@@ -199,7 +197,7 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
         stopCamera();
         
         // Switch to preview tab
-        setActiveTab("preview");
+        setSubmissionStage("Image captured successfully");
       }, 'image/jpeg', 0.8);
     } catch (err: any) {
       console.error("Error capturing photo:", err);
@@ -235,43 +233,6 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
       console.error("Image compression failed:", err);
       setError("Image compression failed. Uploading original image.");
       return file; // Return original file if compression fails
-    }
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    if (file) {
-      // Validate file is an image
-      if (!file.type.startsWith("image/")) {
-        setError("Please select an image file");
-        return;
-      }
-      
-      try {
-        // Compress image if it's larger than 500KB
-        let fileToUse = file;
-        if (file.size > 500 * 1024) {
-          fileToUse = await compressImage(file);
-        } else {
-          setCompressionStatus("Image is already small enough");
-        }
-        
-        setImageFile(fileToUse);
-        setError(null);
-        
-        // Create a preview
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          setImagePreview(e.target?.result as string);
-        };
-        reader.readAsDataURL(fileToUse);
-        
-        // Switch to preview tab
-        setActiveTab("preview");
-      } catch (err) {
-        console.error("Error processing file:", err);
-        setError("Error processing file. Please try again.");
-      }
     }
   };
 
@@ -441,7 +402,7 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
             {type === "check-in" ? "Check-In" : "Check-Out"} Meter Reading
           </MobileDialogTitle>
           <MobileDialogDescription>
-            Please enter the current meter reading and take or upload a photo as evidence.
+            Please enter the current meter reading and take a photo as evidence.
           </MobileDialogDescription>
         </MobileDialogHeader>
 
@@ -486,78 +447,44 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
             />
           </div>
 
-          {/* Image upload/capture tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-4">
-              <TabsTrigger value="upload">
-                <div className="flex items-center">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload
-                </div>
-              </TabsTrigger>
-              <TabsTrigger value="camera">
-                <div className="flex items-center">
-                  <Camera className="h-4 w-4 mr-2" />
-                  Camera
-                </div>
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="upload" className="space-y-4">
-              <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center">
-                <div className="flex flex-col items-center justify-center gap-2">
-                  <ImageIcon className="h-8 w-8 text-gray-400" />
-                  <div className="text-sm text-gray-500">
-                    Drag and drop your image here or click to browse
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    onChange={handleFileChange}
+          {/* Camera Capture */}
+          <div className="space-y-4">
+            <div className="relative bg-gray-100 rounded-lg overflow-hidden aspect-video">
+              {cameraStream ? (
+                <>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover"
                   />
+                  <button
+                    type="button"
+                    onClick={capturePhoto}
+                    className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white rounded-full p-3 shadow-lg"
+                  >
+                    <div className="w-6 h-6 rounded-full border-2 border-gray-800" />
+                  </button>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full p-4">
+                  <Camera className="h-8 w-8 text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-500 text-center">
+                    Camera access required to take meter reading photo
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={startCamera}
+                  >
+                    Start Camera
+                  </Button>
                 </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="camera" className="space-y-4">
-              <div className="relative bg-gray-100 rounded-lg overflow-hidden aspect-video">
-                {cameraStream ? (
-                  <>
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={capturePhoto}
-                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white rounded-full p-3 shadow-lg"
-                    >
-                      <div className="w-6 h-6 rounded-full border-2 border-gray-800" />
-                    </button>
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full p-4">
-                    <Camera className="h-8 w-8 text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-500 text-center">
-                      Click to access your camera
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-2"
-                      onClick={startCamera}
-                    >
-                      Start Camera
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-          </Tabs>
+              )}
+            </div>
+          </div>
 
           {/* Image preview */}
           {imagePreview && (
@@ -573,6 +500,8 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
                   onClick={() => {
                     setImageFile(null);
                     setImagePreview(null);
+                    // Restart camera after removing preview
+                    startCamera();
                   }}
                   className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1"
                 >
@@ -601,7 +530,7 @@ const MeterReadingPopup: React.FC<MeterReadingPopupProps> = ({
           <Button
             type="button"
             onClick={handleSubmit}
-            disabled={isSubmitting || !meterReading}
+            disabled={isSubmitting || !meterReading || !imageFile}
             className={isSubmitting ? "opacity-70" : ""}
           >
             {isSubmitting ? (

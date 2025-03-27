@@ -17,6 +17,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  MobileAlertDialog,
+  MobileAlertDialogAction,
+  MobileAlertDialogCancel,
+  MobileAlertDialogContent,
+  MobileAlertDialogDescription,
+  MobileAlertDialogFooter,
+  MobileAlertDialogHeader,
+  MobileAlertDialogTitle,
+} from "@/components/ui/mobile-alert-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import PasswordChangePopup from "@/components/PasswordChangePopup";
 import AvatarUploadPopup from "@/components/AvatarUploadPopup";
@@ -359,25 +369,25 @@ export default function Sidebar({ userRole, userName }: SidebarProps) {
       </div>
 
       {/* Logout Confirmation Dialog */}
-      <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Logout Confirmation</AlertDialogTitle>
-            <AlertDialogDescription>
+      <MobileAlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+        <MobileAlertDialogContent>
+          <MobileAlertDialogHeader>
+            <MobileAlertDialogTitle>Logout Confirmation</MobileAlertDialogTitle>
+            <MobileAlertDialogDescription>
               Are you sure you want to logout? Any unsaved work may be lost.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            </MobileAlertDialogDescription>
+          </MobileAlertDialogHeader>
+          <MobileAlertDialogFooter>
+            <MobileAlertDialogCancel>Cancel</MobileAlertDialogCancel>
+            <MobileAlertDialogAction
               onClick={handleLogout}
               className="bg-[#E2725B] hover:bg-[#D35400] text-white"
             >
               Logout
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </MobileAlertDialogAction>
+          </MobileAlertDialogFooter>
+        </MobileAlertDialogContent>
+      </MobileAlertDialog>
 
       {/* Password Change Popup */}
       <PasswordChangePopup

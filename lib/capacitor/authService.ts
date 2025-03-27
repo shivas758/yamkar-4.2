@@ -1,5 +1,6 @@
 import { Preferences } from '@capacitor/preferences';
 import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 import { supabase } from "@/lib/supabaseClient";
 
 // Constants
@@ -7,12 +8,16 @@ const AUTH_TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'auth_refresh_token';
 const USER_DATA_KEY = 'auth_user_data';
 const SESSION_EXPIRY_KEY = 'auth_session_expiry';
+const LAST_ACTIVE_TIME_KEY = 'auth_last_active_time';
 
 /**
  * Authentication service for Capacitor integration
  * Handles token storage and session management
  */
 class CapacitorAuthService {
+  private refreshInterval: any = null;
+  private appStateChangeListener: any = null;
+
   /**
    * Initialize the auth service
    */
@@ -26,6 +31,12 @@ class CapacitorAuthService {
       
       // Set up refresh timer if needed
       this.setupTokenRefresh();
+      
+      // Set up app state change listener to handle resume events
+      this.setupAppStateListener();
+      
+      // Update the last active timestamp
+      await this.updateLastActiveTime();
     }
     
     return isNative;
@@ -196,29 +207,112 @@ class CapacitorAuthService {
   }
   
   /**
-   * Set up automatic token refresh
+   * Sets up a listener for app state changes to handle resume events
    */
-  private setupTokenRefresh() {
-    // Schedule token refresh check
-    setInterval(async () => {
-      try {
-        // Check if token needs refresh (if it expires in less than 5 minutes)
-        const { value } = await Preferences.get({ key: SESSION_EXPIRY_KEY });
-        if (!value) return;
+  private setupAppStateListener() {
+    if (this.appStateChangeListener) {
+      // Remove any existing listener
+      this.appStateChangeListener.remove();
+    }
+    
+    // Listen for app state changes
+    this.appStateChangeListener = App.addListener('appStateChange', async ({ isActive }) => {
+      console.log(`App state changed: ${isActive ? 'active' : 'inactive'}`);
+      
+      if (isActive) {
+        console.log('App resumed, checking session status');
         
-        const expiryTime = parseInt(value, 10);
-        const currentTime = Math.floor(Date.now() / 1000);
-        const timeUntilExpiry = expiryTime - currentTime;
+        // Check if we were inactive for a significant period (more than 1 minute)
+        const wasInactiveTooLong = await this.checkInactivityPeriod();
         
-        // If token expires in less than 5 minutes, refresh it
-        if (timeUntilExpiry > 0 && timeUntilExpiry < 300) {
-          console.log('Token expiring soon, refreshing');
-          await this.refreshToken();
+        if (wasInactiveTooLong) {
+          console.log('App was inactive for too long, refreshing session');
+          // Force a session refresh when coming back from long inactivity
+          const refreshed = await this.refreshToken();
+          if (!refreshed) {
+            // If refresh failed, try to restore session from storage
+            await this.restoreSession();
+          }
+        } else {
+          // For shorter inactivity periods, just ensure the session is valid
+          const isExpired = await this.isSessionExpired();
+          if (isExpired) {
+            console.log('Session expired, refreshing token');
+            await this.refreshToken();
+          } else {
+            // Even if not expired, ensure the client has the correct session
+            await this.ensureClientSession();
+          }
         }
-      } catch (error) {
-        console.error('Error in token refresh check:', error);
+        
+        // Update the last active time
+        await this.updateLastActiveTime();
       }
-    }, 60000); // Check every minute
+    });
+  }
+
+  /**
+   * Ensures the Supabase client has the correct session
+   * This helps fix issues after screen lock/unlock
+   */
+  private async ensureClientSession(): Promise<boolean> {
+    try {
+      const token = await this.getAuthToken();
+      const refreshToken = (await Preferences.get({ key: REFRESH_TOKEN_KEY })).value || '';
+      
+      if (!token || !refreshToken) return false;
+      
+      // Re-set the session in the client
+      const { error } = await supabase.auth.setSession({
+        access_token: token,
+        refresh_token: refreshToken
+      });
+      
+      if (error) {
+        console.error('Error ensuring client session:', error);
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error ensuring client session:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if the app was inactive for too long
+   */
+  private async checkInactivityPeriod(): Promise<boolean> {
+    try {
+      const { value } = await Preferences.get({ key: LAST_ACTIVE_TIME_KEY });
+      if (!value) return true;
+      
+      const lastActiveTime = parseInt(value, 10);
+      const currentTime = Date.now();
+      const inactivityPeriod = currentTime - lastActiveTime;
+      
+      // If inactive for more than 1 minute (60000ms), consider it a "long" inactivity
+      return inactivityPeriod > 60000;
+    } catch (error) {
+      console.error('Error checking inactivity period:', error);
+      return true; // Assume long inactivity on error
+    }
+  }
+
+  /**
+   * Update the last active time
+   */
+  private async updateLastActiveTime(): Promise<void> {
+    try {
+      const currentTime = Date.now();
+      await Preferences.set({
+        key: LAST_ACTIVE_TIME_KEY,
+        value: currentTime.toString()
+      });
+    } catch (error) {
+      console.error('Error updating last active time:', error);
+    }
   }
   
   /**
@@ -281,9 +375,56 @@ class CapacitorAuthService {
       return false;
     }
   }
+
+  /**
+   * Cleans up resources when the service is no longer needed
+   */
+  cleanup() {
+    // Clear any refresh interval
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
+    }
+    
+    // Remove app state listener
+    if (this.appStateChangeListener) {
+      this.appStateChangeListener.remove();
+      this.appStateChangeListener = null;
+    }
+  }
+
+  /**
+   * Set up automatic token refresh
+   */
+  private setupTokenRefresh() {
+    // Clear any existing interval
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
+    
+    // Schedule token refresh check
+    this.refreshInterval = setInterval(async () => {
+      try {
+        // Check if token needs refresh (if it expires in less than 5 minutes)
+        const { value } = await Preferences.get({ key: SESSION_EXPIRY_KEY });
+        if (!value) return;
+        
+        const expiryTime = parseInt(value, 10);
+        const currentTime = Math.floor(Date.now() / 1000);
+        const timeUntilExpiry = expiryTime - currentTime;
+        
+        // If token expires in less than 5 minutes, refresh it
+        if (timeUntilExpiry > 0 && timeUntilExpiry < 300) {
+          console.log('Token expiring soon, refreshing');
+          await this.refreshToken();
+        }
+      } catch (error) {
+        console.error('Error in token refresh check:', error);
+      }
+    }, 60000); // Check every minute
+  }
 }
 
-// Create singleton instance
+// Create a singleton instance
 const capacitorAuthService = new CapacitorAuthService();
-
 export default capacitorAuthService;
