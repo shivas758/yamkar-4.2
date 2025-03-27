@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useReconnection } from '@/hooks/useReconnection';
 import { useReconnectionContext } from '@/contexts/ReconnectionContext';
+import { useAuth } from '@/contexts/auth-context';
 
 interface Todo {
   id: string;
@@ -17,11 +18,21 @@ export default function TodoList() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Get authentication state
+  const { user, isLoading: authLoading } = useAuth();
+  
   // Get the reconnection context for UI indicators
   const { isReconnecting, lastReconnection } = useReconnectionContext();
   
   // Define data fetching function
   const fetchTodos = useCallback(async () => {
+    // Don't fetch if not authenticated
+    if (!user) {
+      setTodos([]);
+      setIsLoading(false);
+      return;
+    }
+    
     setIsLoading(true);
     setError(null);
     
@@ -42,18 +53,25 @@ export default function TodoList() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user]);
   
-  // Initial data fetch
+  // Initial data fetch - only when authenticated and not loading
   useEffect(() => {
-    fetchTodos();
-  }, [fetchTodos]);
+    if (user && !authLoading) {
+      fetchTodos();
+    }
+  }, [fetchTodos, user, authLoading]);
   
   // Set up reconnection handler
   useReconnection(fetchTodos);
   
   // Set up realtime subscription
   useEffect(() => {
+    // Don't set up subscription if not authenticated
+    if (!user) return;
+    
+    console.log('Setting up realtime subscription');
+    
     // Set up realtime subscription for todos table
     const subscription = supabase
       .channel('todos-changes')
@@ -82,7 +100,12 @@ export default function TodoList() {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [user]);
+  
+  // If not authenticated, don't show the component
+  if (!user) {
+    return null;
+  }
   
   return (
     <div className="todo-list">
