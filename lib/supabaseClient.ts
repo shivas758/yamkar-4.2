@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { eventBus, EVENTS } from './eventBus';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 if (!supabaseUrl) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL')
@@ -87,6 +88,9 @@ export async function forceReconnectSupabase(): Promise<boolean> {
         
         console.log("Reconnecting realtime...");
         await supabase.realtime.connect();
+        
+        // Notify about realtime reconnection
+        eventBus.publish(EVENTS.SUPABASE_RECONNECTED, { type: 'realtime' });
       }
     } catch (realtimeError) {
       console.error("Error reconnecting realtime:", realtimeError);
@@ -100,15 +104,13 @@ export async function forceReconnectSupabase(): Promise<boolean> {
       
       if (error) {
         console.warn("Error refreshing session:", error);
-        return false;
-      }
-      
-      if (data?.session) {
+      } else if (data?.session) {
         console.log("Session refreshed successfully");
+        // Notify about session refresh
+        eventBus.publish(EVENTS.SESSION_RESTORED, { session: data.session });
       }
     } catch (sessionError) {
       console.error("Error refreshing session:", sessionError);
-      return false;
     }
     
     // 3. Test a basic query to verify the connection
@@ -124,6 +126,10 @@ export async function forceReconnectSupabase(): Promise<boolean> {
       }
       
       console.log(`Connection test successful (${endTime - startTime}ms)`);
+      
+      // Notify all components that data should be refreshed
+      eventBus.publish(EVENTS.DATA_REFRESH_NEEDED);
+      
       return true;
     } catch (testError) {
       console.error("Connection test failed with exception:", testError);

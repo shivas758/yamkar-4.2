@@ -2,6 +2,8 @@ import { Preferences } from '@capacitor/preferences';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { supabase } from "@/lib/supabaseClient";
+import { forceReconnectSupabase } from "@/lib/supabaseClient";
+import { eventBus, EVENTS } from "@/lib/eventBus";
 
 // Constants
 const AUTH_TOKEN_KEY = 'auth_token';
@@ -19,6 +21,7 @@ class CapacitorAuthService {
   private refreshInterval: any = null;
   private appStateChangeListener: any = null;
   private recoveryInProgress: boolean = false;
+  private visibilityChangeListener: any = null;
 
   /**
    * Initialize the auth service
@@ -221,26 +224,41 @@ class CapacitorAuthService {
           // Check if we were inactive for a significant period (more than 1 minute)
           const wasInactiveTooLong = await this.checkInactivityPeriod();
           
+          let sessionRestored = false;
+          
           if (wasInactiveTooLong) {
             console.log('App was inactive for too long, performing full session recovery');
             // Force a complete session recovery when coming back from long inactivity
-            await this.performFullSessionRecovery();
+            sessionRestored = await this.performFullSessionRecovery();
           } else {
             // For shorter inactivity periods, just ensure the session is valid
             const isExpired = await this.isSessionExpired();
             if (isExpired) {
               console.log('Session expired, refreshing token');
-              await this.refreshToken();
+              sessionRestored = await this.refreshToken();
             } else {
               // Even if not expired, ensure the client has the correct session
-              await this.ensureClientSession();
+              sessionRestored = await this.ensureClientSession();
             }
+          }
+          
+          // Try to reconnect Supabase regardless of session status
+          const reconnected = await forceReconnectSupabase();
+          
+          // If everything was successful, make sure to notify components
+          if (sessionRestored && reconnected) {
+            console.log('Session recovery and reconnection successful, notifying components');
+            eventBus.publish(EVENTS.DATA_REFRESH_NEEDED);
           }
         } catch (error) {
           console.error('Error during app resume session recovery:', error);
           // On critical errors, try a last resort session restore
           try {
-            await this.restoreSession();
+            const restored = await this.restoreSession();
+            if (restored) {
+              await forceReconnectSupabase();
+              eventBus.publish(EVENTS.DATA_REFRESH_NEEDED);
+            }
           } catch (restoreError) {
             console.error('Failed last resort session restore:', restoreError);
           }
@@ -249,8 +267,52 @@ class CapacitorAuthService {
           await this.updateLastActiveTime();
           this.recoveryInProgress = false;
         }
+      } else {
+        // App going inactive - store the current time
+        await this.updateLastActiveTime();
       }
     });
+    
+    // Also add visibility change event listener if in browser context
+    if (typeof document !== 'undefined') {
+      // First remove any existing listener
+      if (this.visibilityChangeListener) {
+        document.removeEventListener('visibilitychange', this.visibilityChangeListener);
+      }
+      
+      // Create the listener function
+      this.visibilityChangeListener = async () => {
+        if (document.visibilityState === 'visible') {
+          console.log('Tab is now visible, checking connection');
+          
+          // Skip if recovery is already in progress
+          if (this.recoveryInProgress) {
+            console.log('Recovery already in progress, skipping visibility change handler');
+            return;
+          }
+          
+          this.recoveryInProgress = true;
+          
+          try {
+            // For visibility change, we'll do a lighter recovery
+            // Just ensure client session and reconnect
+            const sessionOk = await this.ensureClientSession();
+            const reconnected = await forceReconnectSupabase();
+            
+            if (sessionOk && reconnected) {
+              console.log('Connection restored after visibility change');
+            }
+          } catch (error) {
+            console.error('Error handling visibility change:', error);
+          } finally {
+            this.recoveryInProgress = false;
+          }
+        }
+      };
+      
+      // Add the listener
+      document.addEventListener('visibilitychange', this.visibilityChangeListener);
+    }
   }
 
   /**
@@ -340,10 +402,13 @@ class CapacitorAuthService {
       const token = await this.getAuthToken();
       const refreshToken = (await Preferences.get({ key: REFRESH_TOKEN_KEY })).value || '';
       
-      if (!token || !refreshToken) return false;
+      if (!token || !refreshToken) {
+        console.log('No tokens found, attempting full session recovery');
+        return await this.performFullSessionRecovery();
+      }
       
       // Re-set the session in the client
-      const { error } = await supabase.auth.setSession({
+      const { data, error } = await supabase.auth.setSession({
         access_token: token,
         refresh_token: refreshToken
       });
@@ -351,6 +416,23 @@ class CapacitorAuthService {
       if (error) {
         console.error('Error ensuring client session:', error);
         return false;
+      }
+      
+      // Store any new tokens that might have been returned
+      if (data?.session?.refresh_token && data.session.refresh_token !== refreshToken) {
+        console.log('New refresh token received, updating storage');
+        await Preferences.set({
+          key: REFRESH_TOKEN_KEY,
+          value: data.session.refresh_token
+        });
+        
+        // Also update the auth token if provided
+        if (data.session.access_token) {
+          await Preferences.set({
+            key: AUTH_TOKEN_KEY,
+            value: data.session.access_token
+          });
+        }
       }
       
       // Also verify the session with a simple query
@@ -476,19 +558,25 @@ class CapacitorAuthService {
   }
 
   /**
-   * Cleans up resources when the service is no longer needed
+   * Clean up all listeners and intervals
    */
   cleanup() {
-    // Clear any refresh interval
+    // Remove app state change listener
+    if (this.appStateChangeListener) {
+      this.appStateChangeListener.remove();
+      this.appStateChangeListener = null;
+    }
+    
+    // Clear refresh interval
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
       this.refreshInterval = null;
     }
     
-    // Remove app state listener
-    if (this.appStateChangeListener) {
-      this.appStateChangeListener.remove();
-      this.appStateChangeListener = null;
+    // Remove visibility change listener
+    if (typeof document !== 'undefined' && this.visibilityChangeListener) {
+      document.removeEventListener('visibilitychange', this.visibilityChangeListener);
+      this.visibilityChangeListener = null;
     }
   }
 
