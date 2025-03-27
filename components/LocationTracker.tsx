@@ -211,16 +211,31 @@ export default function LocationTracker({
       
       console.log(`Page became visible. Last update was ${timeSinceLastUpdate/1000} seconds ago`);
       
-      // If it's been more than 1 minute since the last update
-      if (timeSinceLastUpdate > 60000) {
-        console.log("Page became visible and it's been over a minute, triggering immediate location update");
+      // If it's been more than 30 seconds since the last update
+      if (timeSinceLastUpdate > 30000) {
+        console.log("Page became visible and it's been over 30 seconds, waiting for auth reconnection before tracking");
+        
+        // Wait for auth context to reconnect before attempting to update location
+        setTimeout(() => {
+          console.log("Resuming location tracking after reconnection delay");
+          getCurrentLocation();
+          
+          // Restart the animation frame loop if not running
+          if (!animationFrameRef.current) {
+            console.log("Restarting requestAnimationFrame loop");
+            animationFrameRef.current = requestAnimationFrame(checkForNextUpdate);
+          }
+        }, 1500); // Increased delay to 1.5 seconds to ensure auth is reconnected
+      } else {
+        // For short visibility changes
+        console.log("Short visibility change, triggering immediate location update");
         getCurrentLocation();
-      }
-      
-      // Check if we need to restart the animation frame
-      if (!animationFrameRef.current) {
-        console.log("Restarting requestAnimationFrame loop");
-        animationFrameRef.current = requestAnimationFrame(checkForNextUpdate);
+        
+        // Check if we need to restart the animation frame
+        if (!animationFrameRef.current) {
+          console.log("Restarting requestAnimationFrame loop");
+          animationFrameRef.current = requestAnimationFrame(checkForNextUpdate);
+        }
       }
     } else {
       // When page becomes hidden, use a setInterval as a fallback
@@ -231,6 +246,12 @@ export default function LocationTracker({
       }
       
       keepAliveIntervalRef.current = setInterval(() => {
+        // First check if logout is in progress before doing work
+        if (localStorage.getItem('auth_logout_in_progress') === 'true') {
+          console.log("Logout in progress, skipping background location update");
+          return;
+        }
+        
         const now = Date.now();
         const lastUpdate = lastUpdateRef.current || 0;
         if (now - lastUpdate > interval) {

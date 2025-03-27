@@ -47,7 +47,10 @@ const AdminEmployeeList = () => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         console.log('Page became visible, refreshing employee data');
-        fetchEmployees();
+        // Add a slight delay to ensure auth context has restored the session first
+        setTimeout(() => {
+          fetchEmployees();
+        }, 1000); // 1 second delay to let auth context reconnect first
       }
     };
     

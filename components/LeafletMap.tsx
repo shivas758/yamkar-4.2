@@ -71,57 +71,82 @@ const LeafletMap: React.FC<LeafletMapProps> = ({
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log(`Tab became visible, forcing map redraw for containerType: ${containerTypeRef.current}`);
+        console.log(`Tab became visible, planning map redraw for containerType: ${containerTypeRef.current}`);
         
-        // Force close any existing popups right away
-        document.querySelectorAll('.leaflet-popup').forEach(popup => {
-          popup.remove();
-        });
-        
-        // Force any existing maps to be removed
-        document.querySelectorAll('.leaflet-container').forEach(element => {
-          try {
-            element.remove();
-          } catch (e) { /* ignore */ }
-        });
-        
-        // Brute force DOM manipulation first - reset map container
-        try {
-          const mapContainers = document.querySelectorAll('[data-map-id]');
-          mapContainers.forEach(container => {
-            console.log("Resetting map container:", container);
-            (container as HTMLElement).style.display = 'block';
-            (container as HTMLElement).style.visibility = 'visible';
-            (container as HTMLElement).style.height = '350px';
-            (container as HTMLElement).innerHTML = ''; // Clear any remaining map elements
-          });
-        } catch (e) {
-          console.error("Error resetting containers:", e);
-        }
-        
-        // Destroy existing map
-        if (mapRef.current) {
-          try {
-            console.log("Destroying old map on visibility change");
-            mapRef.current.remove();
-            mapRef.current = null;
-          } catch (err) {
-            console.error('Error removing map during visibility change:', err);
-          }
-        }
-        
-        // CRITICAL FIX: First ensure the container exists before proceeding
-        // If container doesn't exist, we need to recreate it
-        if (!document.querySelector(`[data-map-id="${mapInstanceId.current}"]`)) {
-          console.log("Map container missing! Creating replacement container");
+        // Delay map recreation to ensure auth context has had time to restore the session
+        // This is critical for maps that need to fetch data from Supabase
+        setTimeout(() => {
+          console.log(`Delayed map redraw starting now for containerType: ${containerTypeRef.current}`);
           
-          // Find the wrapper element
-          const wrapper = document.getElementById(`map-wrapper-${visibilityKey}`);
-          if (!wrapper) {
-            // If we can't find the wrapper, try to find any suitable container
-            const fallbackContainer = document.querySelector('.h-full.w-full');
-            if (fallbackContainer) {
-              console.log("Using fallback container");
+          // Force close any existing popups right away
+          document.querySelectorAll('.leaflet-popup').forEach(popup => {
+            popup.remove();
+          });
+          
+          // Force any existing maps to be removed
+          document.querySelectorAll('.leaflet-container').forEach(element => {
+            try {
+              element.remove();
+            } catch (e) { /* ignore */ }
+          });
+          
+          // Brute force DOM manipulation first - reset map container
+          try {
+            const mapContainers = document.querySelectorAll('[data-map-id]');
+            mapContainers.forEach(container => {
+              console.log("Resetting map container:", container);
+              (container as HTMLElement).style.display = 'block';
+              (container as HTMLElement).style.visibility = 'visible';
+              (container as HTMLElement).style.height = '350px';
+              (container as HTMLElement).innerHTML = ''; // Clear any remaining map elements
+            });
+          } catch (e) {
+            console.error("Error resetting containers:", e);
+          }
+          
+          // Destroy existing map
+          if (mapRef.current) {
+            try {
+              console.log("Destroying old map on visibility change");
+              mapRef.current.remove();
+              mapRef.current = null;
+            } catch (err) {
+              console.error('Error removing map during visibility change:', err);
+            }
+          }
+          
+          // CRITICAL FIX: First ensure the container exists before proceeding
+          // If container doesn't exist, we need to recreate it
+          if (!document.querySelector(`[data-map-id="${mapInstanceId.current}"]`)) {
+            console.log("Map container missing! Creating replacement container");
+            
+            // Find the wrapper element
+            const wrapper = document.getElementById(`map-wrapper-${visibilityKey}`);
+            if (!wrapper) {
+              // If we can't find the wrapper, try to find any suitable container
+              const fallbackContainer = document.querySelector('.h-full.w-full');
+              if (fallbackContainer) {
+                console.log("Using fallback container");
+                const newContainer = document.createElement('div');
+                newContainer.setAttribute('data-map-id', mapInstanceId.current);
+                newContainer.className = 'h-full w-full';
+                newContainer.style.width = '100%';
+                newContainer.style.height = '350px';
+                newContainer.style.position = 'relative';
+                newContainer.style.display = 'block';
+                newContainer.style.visibility = 'visible';
+                newContainer.style.zIndex = '1000';
+                newContainer.style.backgroundColor = '#f0f0f0';
+                newContainer.style.overflow = 'hidden';
+                
+                fallbackContainer.appendChild(newContainer);
+              }
+            } else {
+              console.log("Found wrapper, recreating container");
+              // Clear wrapper content
+              wrapper.innerHTML = '';
+              
+              // Create new container
               const newContainer = document.createElement('div');
               newContainer.setAttribute('data-map-id', mapInstanceId.current);
               newContainer.className = 'h-full w-full';
@@ -134,71 +159,52 @@ const LeafletMap: React.FC<LeafletMapProps> = ({
               newContainer.style.backgroundColor = '#f0f0f0';
               newContainer.style.overflow = 'hidden';
               
-              fallbackContainer.appendChild(newContainer);
+              wrapper.appendChild(newContainer);
             }
-          } else {
-            console.log("Found wrapper, recreating container");
-            // Clear wrapper content
-            wrapper.innerHTML = '';
-            
-            // Create new container
-            const newContainer = document.createElement('div');
-            newContainer.setAttribute('data-map-id', mapInstanceId.current);
-            newContainer.className = 'h-full w-full';
-            newContainer.style.width = '100%';
-            newContainer.style.height = '350px';
-            newContainer.style.position = 'relative';
-            newContainer.style.display = 'block';
-            newContainer.style.visibility = 'visible';
-            newContainer.style.zIndex = '1000';
-            newContainer.style.backgroundColor = '#f0f0f0';
-            newContainer.style.overflow = 'hidden';
-            
-            wrapper.appendChild(newContainer);
-          }
-        }
-        
-        // Immediately attempt to create emergency map with delay
-        setTimeout(() => {
-          try {
-            // Get cached data if available
-            if (showPath && attendanceLogId) {
-              const cacheKey = `map_locations_${attendanceLogId}_${new Date().toISOString().split('T')[0]}`;
-              try {
-                const cachedData = localStorage.getItem(cacheKey);
-                if (cachedData) {
-                  const parsedData = JSON.parse(cachedData);
-                  if (Array.isArray(parsedData) && parsedData.length > 0) {
-                    console.log(`Creating emergency map with ${parsedData.length} cached locations`);
-                    createEmergencyMap(parsedData);
-                    return;
-                  }
-                }
-              } catch (e) {
-                console.error("Error accessing cached data:", e);
-              }
-            }
-            
-            // If we have current locations in state, use those
-            if (employeeLocations && employeeLocations.length > 0) {
-              console.log("Creating emergency map with state locations");
-              createEmergencyMap(employeeLocations);
-            } else if (attendanceLogId) {
-              // If nothing else works, force a reload from API
-              console.log("Force reloading locations for emergency map");
-              fetchEmployeeLocations(attendanceLogId, false).then(locations => {
-                if (locations && locations.length > 0) {
-                  createEmergencyMap(locations);
-                }
-              });
-            }
-          } catch (e) {
-            console.error("Error in immediate emergency map creation:", e);
           }
           
-          // Also trigger a component re-render as backup
-          setVisibilityKey(Date.now());
-        }, 300);
+          // Immediately attempt to create emergency map with delay
+          setTimeout(() => {
+            try {
+              // Get cached data if available
+              if (showPath && attendanceLogId) {
+                const cacheKey = `map_locations_${attendanceLogId}_${new Date().toISOString().split('T')[0]}`;
+                try {
+                  const cachedData = localStorage.getItem(cacheKey);
+                  if (cachedData) {
+                    const parsedData = JSON.parse(cachedData);
+                    if (Array.isArray(parsedData) && parsedData.length > 0) {
+                      console.log(`Creating emergency map with ${parsedData.length} cached locations`);
+                      createEmergencyMap(parsedData);
+                      return;
+                    }
+                  }
+                } catch (e) {
+                  console.error("Error accessing cached data:", e);
+                }
+              }
+              
+              // If we have current locations in state, use those
+              if (employeeLocations && employeeLocations.length > 0) {
+                console.log("Creating emergency map with state locations");
+                createEmergencyMap(employeeLocations);
+              } else if (attendanceLogId) {
+                // If nothing else works, force a reload from API
+                console.log("Force reloading locations for emergency map");
+                fetchEmployeeLocations(attendanceLogId, false).then(locations => {
+                  if (locations && locations.length > 0) {
+                    createEmergencyMap(locations);
+                  }
+                });
+              }
+            } catch (e) {
+              console.error("Error in immediate emergency map creation:", e);
+            }
+            
+            // Also trigger a component re-render as backup
+            setVisibilityKey(Date.now());
+          }, 300);
+        }, 1500); // Allow 1.5 seconds for auth context to reconnect first
       }
     };
     
