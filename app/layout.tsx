@@ -15,6 +15,12 @@ const CapacitorIntegration = dynamic(
   { ssr: false }
 );
 
+// After other dynamic imports
+const ConnectionManager = dynamic(
+  () => import('@/components/ConnectionManager'),
+  { ssr: false }
+);
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -68,6 +74,7 @@ export default function RootLayout({
         <AuthProvider>
           {/* Add the Capacitor integration component */}
           <CapacitorIntegration />
+          <ConnectionManager />
           <ReconnectionProvider>
             {children}
           </ReconnectionProvider>

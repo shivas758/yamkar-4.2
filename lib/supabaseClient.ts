@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { eventBus, EVENTS } from './eventBus';
+import { forceConnectionRefresh } from './connectionManager';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 if (!supabaseUrl) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL')
@@ -74,67 +75,11 @@ export const adminSupabase = supabaseServiceKey
  * This can be used to recover from issues with the connection
  */
 export async function forceReconnectSupabase(): Promise<boolean> {
+  console.log("Force reconnecting Supabase client");
+  
   try {
-    console.log("Force reconnecting Supabase client");
-    
-    // 1. Force a realtime disconnect & reconnect
-    try {
-      if (supabase.realtime) {
-        console.log("Disconnecting realtime...");
-        await supabase.realtime.disconnect();
-        
-        // Small delay to ensure clean disconnect
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        console.log("Reconnecting realtime...");
-        await supabase.realtime.connect();
-        
-        // Notify about realtime reconnection
-        eventBus.publish(EVENTS.SUPABASE_RECONNECTED, { type: 'realtime' });
-      }
-    } catch (realtimeError) {
-      console.error("Error reconnecting realtime:", realtimeError);
-      // Continue with other recovery steps even if this fails
-    }
-    
-    // 2. Verify and refresh the current session
-    try {
-      console.log("Refreshing auth session...");
-      const { data, error } = await supabase.auth.refreshSession();
-      
-      if (error) {
-        console.warn("Error refreshing session:", error);
-      } else if (data?.session) {
-        console.log("Session refreshed successfully");
-        // Notify about session refresh
-        eventBus.publish(EVENTS.SESSION_RESTORED, { session: data.session });
-      }
-    } catch (sessionError) {
-      console.error("Error refreshing session:", sessionError);
-    }
-    
-    // 3. Test a basic query to verify the connection
-    try {
-      console.log("Testing connection with a basic query...");
-      const startTime = Date.now();
-      const { error } = await supabase.from('users').select('id').limit(1);
-      const endTime = Date.now();
-      
-      if (error) {
-        console.error("Connection test failed:", error);
-        return false;
-      }
-      
-      console.log(`Connection test successful (${endTime - startTime}ms)`);
-      
-      // Notify all components that data should be refreshed
-      eventBus.publish(EVENTS.DATA_REFRESH_NEEDED);
-      
-      return true;
-    } catch (testError) {
-      console.error("Connection test failed with exception:", testError);
-      return false;
-    }
+    // Delegate to the central connection manager which handles auth, realtime and connection recovery
+    return await forceConnectionRefresh();
   } catch (error) {
     console.error("Critical error during Supabase reconnection:", error);
     return false;

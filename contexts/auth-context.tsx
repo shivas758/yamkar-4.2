@@ -2,9 +2,11 @@
 
 import type React from "react";
 import type { User } from "@/types";
-import { supabase, forceReconnectSupabase } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useState, useEffect, useRef } from "react";
+import { eventBus, EVENTS } from "@/lib/eventBus";
+import { initConnectionManager, cleanupConnectionManager, ConnectionStatus } from "@/lib/connectionManager";
 
 interface AuthContextType {
   user: User | null;
@@ -22,186 +24,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const lastActiveTime = useRef<number>(Date.now());
   const supabaseReconnectInProgress = useRef<boolean>(false);
 
-  // Handle visibility change events
+  // Initialize the connection manager on first render
   useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible') {
-        console.log("Tab became visible, checking session status");
-        
-        // Prevent concurrent reconnection attempts
-        if (supabaseReconnectInProgress.current) {
-          console.log("Reconnection already in progress, skipping");
-          return;
+    // Initialize the central connection manager
+    initConnectionManager();
+    
+    // Listen for connection status changes
+    const statusListener = eventBus.subscribe(EVENTS.CONNECTION_STATUS_CHANGED, ({ status }) => {
+      console.log(`Connection status changed: ${status}`);
+      
+      // If disconnected or error, we need to update UI accordingly
+      if (status === ConnectionStatus.DISCONNECTED || status === ConnectionStatus.ERROR) {
+        // If there's no user and we're disconnected, we can just redirect to login
+        if (!user) {
+          router.push('/');
         }
-        
+      }
+    });
+    
+    // Listen for data refresh events to update user data if needed
+    const refreshListener = eventBus.subscribe(EVENTS.DATA_REFRESH_NEEDED, async () => {
+      console.log('Connection restored, refreshing user data if needed');
+      if (user) {
         try {
-          supabaseReconnectInProgress.current = true;
-          
-          // Check if we were away for a significant time (more than 30 seconds)
-          const now = Date.now();
-          const inactivityTime = now - lastActiveTime.current;
-          const longInactivity = inactivityTime > 30000; // 30 seconds threshold
-          
-          console.log(`Inactive for ${inactivityTime/1000} seconds`);
-          
-          if (longInactivity) {
-            console.log("Long inactivity detected, performing full reconnection");
-            // Use the more comprehensive force reconnect function
-            const reconnected = await forceReconnectSupabase();
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            const { data: userProfile, error } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
             
-            if (reconnected) {
-              console.log("Full reconnection successful");
-              // Now also refresh our user state after successful reconnection
-              if (user) {
-                // After reconnection, verify our user data is current
-                const { data: { session } } = await supabase.auth.getSession();
-                if (session) {
-                  const { data: userProfile, error } = await supabase
-                    .from('users')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .single();
-                  
-                  if (!error && userProfile) {
-                    // Only update if data is different to avoid unnecessary renders
-                    if (JSON.stringify(userProfile) !== JSON.stringify(user)) {
-                      console.log("Updating user profile after reconnection");
-                      setUser(userProfile);
-                    }
-                  }
-                }
+            if (!error && userProfile) {
+              // Only update if data is different to avoid unnecessary renders
+              if (JSON.stringify(userProfile) !== JSON.stringify(user)) {
+                console.log("Updating user profile after reconnection");
+                setUser(userProfile);
               }
-            } else {
-              console.error("Failed to reconnect. Attempting recovery...");
-              await ensureSupabaseConnection(true);
             }
-          } else {
-            console.log("Short inactivity, verifying session only");
-            await ensureSupabaseConnection(false);
           }
         } catch (error) {
-          console.error("Error recovering session after visibility change:", error);
-        } finally {
-          // Update last active time
-          lastActiveTime.current = Date.now();
-          supabaseReconnectInProgress.current = false;
+          console.error('Error refreshing user data:', error);
         }
-      } else if (document.visibilityState === 'hidden') {
-        // Update last active time when tab becomes hidden
+      }
+    });
+    
+    return () => {
+      // Cleanup the connection manager and event listeners
+      statusListener();
+      refreshListener();
+      cleanupConnectionManager();
+    };
+  }, [user, router]);
+
+  // Handle visibility change events
+  useEffect(() => {
+    // The connection manager now handles visibility changes directly,
+    // so we don't need our own handler here
+    
+    // We'll keep track of our own last active time for other purposes
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
         lastActiveTime.current = Date.now();
       }
     };
 
-    // Robust reconnection function
-    const ensureSupabaseConnection = async (forceFullReconnect: boolean) => {
-      try {
-        console.log("Ensuring Supabase connection...");
-        
-        // Step 1: Check current session without doing a network request
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session && !forceFullReconnect) {
-          console.log("No session found and no force reconnect, nothing to recover");
-          setUser(null);
-          return;
-        }
-        
-        // Step 2: For long inactivity or if explicitly forced, perform a token refresh
-        if (forceFullReconnect) {
-          console.log("Forcing session refresh");
-          try {
-            // Try to refresh the token
-            const { data, error } = await supabase.auth.refreshSession();
-            
-            if (error) {
-              console.error("Error refreshing session:", error);
-              // If refresh fails, check if we should try to recover from localStorage
-              const storedSession = localStorage.getItem('supabase.auth.token');
-              if (!storedSession) {
-                console.log("No stored session found, can't recover");
-                setUser(null);
-                return;
-              }
-            }
-            
-            // If we refreshed successfully, get the current user
-            if (data?.session) {
-              // Force-update the client's internal session state
-              await supabase.auth.setSession({
-                access_token: data.session.access_token,
-                refresh_token: data.session.refresh_token
-              });
-              
-              // Fetch user profile
-              const { data: userProfile, error: profileError } = await supabase
-                .from('users')
-                .select('*')
-                .eq('id', data.session.user.id)
-                .single();
-              
-              if (profileError) {
-                console.error("Error fetching user profile after refresh:", profileError);
-              } else {
-                setUser(userProfile);
-              }
-            }
-          } catch (refreshError) {
-            console.error("Critical error during session refresh:", refreshError);
-          }
-        } else if (session) {
-          // For short inactivity with existing session, just verify session is working
-          console.log("Verifying existing session");
-          
-          try {
-            // Test the session with a simple query to make sure it's functioning
-            const { error: testError } = await supabase
-              .from('users')
-              .select('id')
-              .limit(1);
-            
-            if (testError) {
-              console.warn("Session verification failed, forcing full reconnect:", testError);
-              // If verification fails, try a full reconnection
-              await ensureSupabaseConnection(true);
-            } else {
-              // Session is working, make sure user state is in sync
-              if (session.user && !user) {
-                const { data: userProfile, error: profileError } = await supabase
-                  .from('users')
-                  .select('*')
-                  .eq('id', session.user.id)
-                  .single();
-                
-                if (!profileError) {
-                  setUser(userProfile);
-                }
-              }
-            }
-          } catch (verifyError) {
-            console.error("Error verifying session:", verifyError);
-          }
-        }
-        
-        // Step 3: Force reconnection of realtime subscriptions (if any)
-        try {
-          // Force reconnect any realtime subscriptions
-          await supabase.realtime.disconnect();
-          await new Promise(resolve => setTimeout(resolve, 300)); // Small delay for cleanup
-          await supabase.realtime.connect();
-        } catch (realtimeError) {
-          console.error("Error reconnecting realtime:", realtimeError);
-          // Non-fatal, continue
-        }
-        
-        console.log("Supabase connection recovery completed");
-      } catch (error) {
-        console.error("Fatal error in ensureSupabaseConnection:", error);
-        // For fatal errors, we might need to force a page reload as last resort
-        // But avoiding that in this implementation to prevent disrupting user experience
-      }
-    };
-
-    // Add event listener for tab visibility changes
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', handleVisibilityChange);
     }
@@ -211,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
     };
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     // Add a global event listener for auth state changes

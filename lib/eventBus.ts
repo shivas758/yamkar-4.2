@@ -34,5 +34,7 @@ export const eventBus = new EventBus();
 export const EVENTS = {
   SUPABASE_RECONNECTED: 'supabase:reconnected',
   SESSION_RESTORED: 'auth:session:restored',
-  DATA_REFRESH_NEEDED: 'data:refresh:needed'
+  DATA_REFRESH_NEEDED: 'data:refresh:needed',
+  CONNECTION_STATUS_CHANGED: 'connection:status:changed',
+  CONNECTION_RESTORED: 'connection:restored'
 }; 
