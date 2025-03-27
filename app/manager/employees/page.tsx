@@ -66,6 +66,7 @@ const ManagerEmployeeList = () => {
     setIsLoading(true);
 
     try {
+      console.log("Fetching employees data for manager");
       const { data, error } = await supabase
         .from('users')
         .select(`
@@ -78,16 +79,61 @@ const ManagerEmployeeList = () => {
 
       if (error) {
         console.error("Error fetching employees:", error);
+        
+        // Implement retry with a delay if fetch fails
+        setTimeout(async () => {
+          console.log("Retrying employee fetch after failure");
+          try {
+            // Try forcing a reconnection before retry
+            const { forceReconnectSupabase } = await import('@/lib/supabaseClient');
+            await forceReconnectSupabase();
+            
+            // Retry the fetch after reconnection
+            const { data: retryData, error: retryError } = await supabase
+              .from('users')
+              .select(`
+                *,
+                cadre(name),
+                attendance_logs(id, check_in, check_out)
+              `)
+              .eq('role', 'employee')
+              .eq('manager_id', user.id);
+            
+            if (retryError) {
+              console.error("Error in retry fetch:", retryError);
+            } else if (retryData) {
+              console.log(`Retry successful, found ${retryData.length} employees`);
+              processEmployeesData(retryData);
+            }
+          } catch (e) {
+            console.error("Error during retry fetch:", e);
+          } finally {
+            setIsLoading(false);
+          }
+        }, 2000); // 2-second delay before retry
+        
         return;
       }
 
+      // Process and set employees data
+      processEmployeesData(data);
+    } catch (error) {
+      console.error("Failed to fetch employees", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Process the employee data including attendance logs
+  const processEmployeesData = async (data: any) => {
+    try {
       interface AttendanceLog {
         id: string;
         check_in: string;
         check_out: string | null;
       }
 
-      const employeesWithStatus = await Promise.all(data.map(async employee => {
+      const employeesWithStatus = await Promise.all(data.map(async (employee: any) => {
         const latestLog = employee.attendance_logs?.sort((a: AttendanceLog, b: AttendanceLog) => 
           new Date(b.check_in).getTime() - new Date(a.check_in).getTime()
         )[0];
@@ -120,16 +166,15 @@ const ManagerEmployeeList = () => {
           }) : null,
           currentLogId: latestLog && !latestLog.check_out ? latestLog.id : null,
           lastLogId: lastAttendanceLogId, // Add this to track the last log regardless of check-out status
-          location: locationStr,
+          location: locationStr ? locationStr : "",
           locationUpdatedAt
         };
       }));
 
+      console.log(`Processed ${employeesWithStatus.length} employees successfully`);
       setEmployees(employeesWithStatus);
-    } catch (error) {
-      console.error("Failed to fetch employees", error);
-    } finally {
-      setIsLoading(false);
+    } catch (e) {
+      console.error("Error processing employee data:", e);
     }
   }
 

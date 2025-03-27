@@ -66,6 +66,7 @@ const AdminEmployeeList = () => {
     setIsLoading(true);
 
     try {
+      console.log("Fetching employees data");
       const { data, error } = await supabase
         .from('users')
         .select(`
@@ -78,6 +79,84 @@ const AdminEmployeeList = () => {
 
       if (error) {
         console.error("Error fetching employees:", error);
+        
+        // Implement retry with a delay if fetch fails
+        setTimeout(async () => {
+          console.log("Retrying employee fetch after failure");
+          try {
+            // Try forcing a reconnection before retry
+            const { forceReconnectSupabase } = await import('@/lib/supabaseClient');
+            await forceReconnectSupabase();
+            
+            // Retry the fetch after reconnection
+            const { data: retryData, error: retryError } = await supabase
+              .from('users')
+              .select(`
+                *,
+                manager:manager_id(name),
+                cadre(name),
+                attendance_logs(id, check_in, check_out)
+              `)
+              .eq('role', 'employee');
+            
+            if (retryError) {
+              console.error("Error in retry fetch:", retryError);
+            } else if (retryData) {
+              console.log(`Retry successful, found ${retryData.length} employees`);
+              
+              interface AttendanceLog {
+                id: string;
+                check_in: string;
+                check_out: string | null;
+              }
+              
+              const employeesWithStatus = await Promise.all(retryData.map(async (employee: any) => {
+                const latestLog = employee.attendance_logs?.sort((a: AttendanceLog, b: AttendanceLog) => 
+                  new Date(b.check_in).getTime() - new Date(a.check_in).getTime()
+                )[0];
+                
+                let locationStr = employee.location || '';
+                let locationUpdatedAt = null;
+                
+                // Fetch latest location data for ALL employees, not just checked-in ones
+                try {
+                  const latestLocation = await fetchLatestEmployeeLocation(employee.id);
+                  if (latestLocation) {
+                    locationStr = `${latestLocation.latitude},${latestLocation.longitude}`;
+                    locationUpdatedAt = new Date(latestLocation.captured_at).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit"
+                    });
+                  }
+                } catch (e) {
+                  console.error(`Error fetching location for employee ${employee.id}:`, e);
+                }
+                
+                const lastAttendanceLogId = latestLog?.id || null;
+                
+                return {
+                  ...employee,
+                  status: latestLog ? (latestLog.check_out ? "checked-out" : "checked-in") : "checked-out",
+                  lastCheckTime: latestLog?.check_in ? new Date(latestLog.check_in).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  }) : null,
+                  currentLogId: latestLog && !latestLog.check_out ? latestLog.id : null,
+                  lastLogId: lastAttendanceLogId,
+                  location: locationStr ? locationStr : "",
+                  locationUpdatedAt
+                };
+              }));
+              
+              setEmployees(employeesWithStatus);
+            }
+          } catch (e) {
+            console.error("Error during retry fetch:", e);
+          } finally {
+            setIsLoading(false);
+          }
+        }, 2000); // 2-second delay before retry
+        
         return;
       }
 
@@ -87,7 +166,7 @@ const AdminEmployeeList = () => {
         check_out: string | null;
       }
 
-      const employeesWithStatus = await Promise.all(data.map(async employee => {
+      const employeesWithStatus = await Promise.all(data.map(async (employee: any) => {
         const latestLog = employee.attendance_logs?.sort((a: AttendanceLog, b: AttendanceLog) => 
           new Date(b.check_in).getTime() - new Date(a.check_in).getTime()
         )[0];
@@ -125,6 +204,7 @@ const AdminEmployeeList = () => {
         };
       }));
 
+      console.log(`Fetched ${employeesWithStatus.length} employees successfully`);
       setEmployees(employeesWithStatus);
     } catch (error) {
       console.error("Failed to fetch employees", error);

@@ -13,6 +13,46 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     autoRefreshToken: true,
     storageKey: 'supabase.auth.token',
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+    // Enable enhanced resilience to temporary disconnections
+    heartbeatIntervalMs: 5000, // 5 seconds
+    // Define reconnection behavior - gradually increasing delay
+    reconnectAfterMs: (retryCount: number) => {
+      // Start with 1s, then 2s, 5s, 10s, etc. up to a max of 15s
+      const delays = [0, 1000, 2000, 5000, 10000, 15000];
+      return delays[retryCount] || 15000;
+    },
+  },
+  global: {
+    // Improve fetch() retry behavior
+    fetch: (url, options) => {
+      // Create a fetch with retries for network issues
+      return new Promise((resolve, reject) => {
+        let attempts = 0;
+        const maxAttempts = 3;
+        const delay = 500; // milliseconds
+        
+        function attemptFetch() {
+          attempts++;
+          fetch(url, options)
+            .then(resolve)
+            .catch(error => {
+              if (attempts < maxAttempts) {
+                console.log(`Fetch attempt ${attempts} failed, retrying...`);
+                setTimeout(attemptFetch, delay * attempts); // Exponential backoff
+              } else {
+                reject(error);
+              }
+            });
+        }
+        
+        attemptFetch();
+      });
+    }
   }
 })
 
@@ -27,6 +67,73 @@ export const adminSupabase = supabaseServiceKey
       }
     })
   : undefined
+
+/**
+ * Forces a reconnection of the Supabase client
+ * This can be used to recover from issues with the connection
+ */
+export async function forceReconnectSupabase(): Promise<boolean> {
+  try {
+    console.log("Force reconnecting Supabase client");
+    
+    // 1. Force a realtime disconnect & reconnect
+    try {
+      if (supabase.realtime) {
+        console.log("Disconnecting realtime...");
+        await supabase.realtime.disconnect();
+        
+        // Small delay to ensure clean disconnect
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        console.log("Reconnecting realtime...");
+        await supabase.realtime.connect();
+      }
+    } catch (realtimeError) {
+      console.error("Error reconnecting realtime:", realtimeError);
+      // Continue with other recovery steps even if this fails
+    }
+    
+    // 2. Verify and refresh the current session
+    try {
+      console.log("Refreshing auth session...");
+      const { data, error } = await supabase.auth.refreshSession();
+      
+      if (error) {
+        console.warn("Error refreshing session:", error);
+        return false;
+      }
+      
+      if (data?.session) {
+        console.log("Session refreshed successfully");
+      }
+    } catch (sessionError) {
+      console.error("Error refreshing session:", sessionError);
+      return false;
+    }
+    
+    // 3. Test a basic query to verify the connection
+    try {
+      console.log("Testing connection with a basic query...");
+      const startTime = Date.now();
+      const { error } = await supabase.from('users').select('id').limit(1);
+      const endTime = Date.now();
+      
+      if (error) {
+        console.error("Connection test failed:", error);
+        return false;
+      }
+      
+      console.log(`Connection test successful (${endTime - startTime}ms)`);
+      return true;
+    } catch (testError) {
+      console.error("Connection test failed with exception:", testError);
+      return false;
+    }
+  } catch (error) {
+    console.error("Critical error during Supabase reconnection:", error);
+    return false;
+  }
+}
 
 // Helper function to check if a storage bucket exists
 export async function checkStorageBucket(bucketName: string): Promise<{exists: boolean, error?: string}> {

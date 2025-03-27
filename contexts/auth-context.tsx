@@ -2,7 +2,7 @@
 
 import type React from "react";
 import type { User } from "@/types";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase, forceReconnectSupabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 
@@ -46,7 +46,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           if (longInactivity) {
             console.log("Long inactivity detected, performing full reconnection");
-            await ensureSupabaseConnection(true);
+            // Use the more comprehensive force reconnect function
+            const reconnected = await forceReconnectSupabase();
+            
+            if (reconnected) {
+              console.log("Full reconnection successful");
+              // Now also refresh our user state after successful reconnection
+              if (user) {
+                // After reconnection, verify our user data is current
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session) {
+                  const { data: userProfile, error } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', session.user.id)
+                    .single();
+                  
+                  if (!error && userProfile) {
+                    // Only update if data is different to avoid unnecessary renders
+                    if (JSON.stringify(userProfile) !== JSON.stringify(user)) {
+                      console.log("Updating user profile after reconnection");
+                      setUser(userProfile);
+                    }
+                  }
+                }
+              }
+            } else {
+              console.error("Failed to reconnect. Attempting recovery...");
+              await ensureSupabaseConnection(true);
+            }
           } else {
             console.log("Short inactivity, verifying session only");
             await ensureSupabaseConnection(false);
