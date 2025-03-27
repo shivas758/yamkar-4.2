@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { eventBus, EVENTS } from '@/lib/eventBus';
 import { useAuth } from '@/contexts/auth-context'; // Import the auth context
+import { ConnectionStatus } from '@/lib/connectionManager';
 
 interface ReconnectionContextType {
   lastReconnection: Date | null;
@@ -33,11 +34,19 @@ export function ReconnectionProvider({ children }: ReconnectionProviderProps) {
     
     console.log("Initializing reconnection event handlers for authenticated user");
     
-    // Subscribe to reconnection events
-    const reconnectingSub = eventBus.subscribe(EVENTS.SUPABASE_RECONNECTED, () => {
-      setIsReconnecting(true);
+    // Instead of directly handling visibility changes or Supabase reconnection,
+    // just listen to events from the central connection manager
+    
+    // Listen for connection status changes
+    const statusSub = eventBus.subscribe(EVENTS.CONNECTION_STATUS_CHANGED, ({ status }) => {
+      // Set reconnecting state based on connection status
+      setIsReconnecting(
+        status === ConnectionStatus.RECONNECTING || 
+        status === ConnectionStatus.AUTHENTICATING
+      );
     });
     
+    // Listen for refresh events
     const refreshSub = eventBus.subscribe(EVENTS.DATA_REFRESH_NEEDED, () => {
       setIsReconnecting(false);
       setLastReconnection(new Date());
@@ -45,7 +54,7 @@ export function ReconnectionProvider({ children }: ReconnectionProviderProps) {
     
     return () => {
       // Clean up subscriptions when auth state changes or component unmounts
-      reconnectingSub();
+      statusSub();
       refreshSub();
     };
   }, [user, authLoading]); // Depend on auth state

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { initConnectionManager, ConnectionStatus, getConnectionStatus } from '@/lib/connectionManager';
+import { useEffect, useState, useRef } from 'react';
+import { initConnectionManager, ConnectionStatus, getConnectionStatus, cleanupConnectionManager } from '@/lib/connectionManager';
 import { eventBus, EVENTS } from '@/lib/eventBus';
 
 /**
@@ -10,13 +10,25 @@ import { eventBus, EVENTS } from '@/lib/eventBus';
  */
 const ConnectionManager = () => {
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.CONNECTED);
+  const initialized = useRef(false);
   
   useEffect(() => {
-    // Initialize the connection manager
-    initConnectionManager();
+    // Only initialize once
+    if (initialized.current) {
+      console.log('ConnectionManager component already initialized, skipping');
+      return;
+    }
     
-    // Listen for connection status changes
+    console.log('ConnectionManager component initializing connection manager');
+    initialized.current = true;
+    
+    // Initialize the connection manager with this component as the source
+    // This will log if it's already been initialized
+    initConnectionManager('ConnectionManager.tsx');
+    
+    // Listen for status changes
     const statusListener = eventBus.subscribe(EVENTS.CONNECTION_STATUS_CHANGED, ({ status }) => {
+      console.log(`ConnectionManager component: Setting status to: ${status}`);
       setStatus(status);
     });
     
@@ -25,6 +37,11 @@ const ConnectionManager = () => {
     
     return () => {
       statusListener();
+      console.log('ConnectionManager component unmounting');
+      // Don't clean up the connection manager on unmount
+      // It should persist throughout the app lifetime
+      // cleanupConnectionManager(); - removing this to prevent disruptions
+      initialized.current = false;
     };
   }, []);
   

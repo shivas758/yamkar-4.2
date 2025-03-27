@@ -127,6 +127,8 @@ export default function CapacitorIntegration() {
           console.log('Background location service initialized:', locationInitialized);
           
           // Add any other service initializations here
+        } else {
+          console.log('Not running on native platform, skipping Capacitor services');
         }
       } catch (error) {
         console.error('Error initializing services:', error);

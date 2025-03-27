@@ -9,6 +9,19 @@ import { Toaster } from "@/components/ui/toaster";
 import dynamic from 'next/dynamic';
 import "./globals.css";
 
+// Debug code to identify all visibility change listeners
+if (typeof document !== 'undefined' && process.env.NODE_ENV === 'development') {
+  const originalAddEventListener = document.addEventListener;
+  document.addEventListener = function(type, listener, options) {
+    if (type === 'visibilitychange') {
+      console.log('===== visibilitychange listener added by: =====');
+      console.trace('Visibility change listener stack trace');
+      console.log('==============================================');
+    }
+    return originalAddEventListener.call(this, type, listener, options);
+  };
+}
+
 // Dynamically import the Capacitor integration component to prevent SSR issues
 const CapacitorIntegration = dynamic(
   () => import('@/components/CapacitorIntegration'),

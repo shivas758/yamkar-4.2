@@ -26,8 +26,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize the connection manager on first render
   useEffect(() => {
-    // Initialize the central connection manager
-    initConnectionManager();
+    // Initialize the central connection manager with a distinct source name
+    initConnectionManager('auth-context.tsx');
     
     // Listen for connection status changes
     const statusListener = eventBus.subscribe(EVENTS.CONNECTION_STATUS_CHANGED, ({ status }) => {

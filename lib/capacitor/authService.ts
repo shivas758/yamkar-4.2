@@ -4,6 +4,7 @@ import { App } from '@capacitor/app';
 import { supabase } from "@/lib/supabaseClient";
 import { forceReconnectSupabase } from "@/lib/supabaseClient";
 import { eventBus, EVENTS } from "@/lib/eventBus";
+import { initConnectionManager } from "@/lib/connectionManager";
 
 // Constants
 const AUTH_TOKEN_KEY = 'auth_token';
@@ -204,7 +205,7 @@ class CapacitorAuthService {
       this.appStateChangeListener.remove();
     }
     
-    // Listen for app state changes
+    // Listen for app state changes (for native mobile apps)
     this.appStateChangeListener = App.addListener('appStateChange', async ({ isActive }) => {
       console.log(`App state changed: ${isActive ? 'active' : 'inactive'}`);
       
@@ -221,49 +222,20 @@ class CapacitorAuthService {
         this.recoveryInProgress = true;
         
         try {
-          // Check if we were inactive for a significant period (more than 1 minute)
-          const wasInactiveTooLong = await this.checkInactivityPeriod();
-          
-          let sessionRestored = false;
-          
-          if (wasInactiveTooLong) {
-            console.log('App was inactive for too long, performing full session recovery');
-            // Force a complete session recovery when coming back from long inactivity
-            sessionRestored = await this.performFullSessionRecovery();
+          // For native apps, we'll focus on session tokens and let the connection manager handle reconnection
+          const isExpired = await this.isSessionExpired();
+          if (isExpired) {
+            console.log('Session expired, refreshing token');
+            await this.refreshToken();
           } else {
-            // For shorter inactivity periods, just ensure the session is valid
-            const isExpired = await this.isSessionExpired();
-            if (isExpired) {
-              console.log('Session expired, refreshing token');
-              sessionRestored = await this.refreshToken();
-            } else {
-              // Even if not expired, ensure the client has the correct session
-              sessionRestored = await this.ensureClientSession();
-            }
+            await this.ensureClientSession();
           }
           
-          // Try to reconnect Supabase regardless of session status
-          const reconnected = await forceReconnectSupabase();
-          
-          // If everything was successful, make sure to notify components
-          if (sessionRestored && reconnected) {
-            console.log('Session recovery and reconnection successful, notifying components');
-            eventBus.publish(EVENTS.DATA_REFRESH_NEEDED);
-          }
+          // Now let the central connection manager handle the reconnection
+          await forceReconnectSupabase();
         } catch (error) {
           console.error('Error during app resume session recovery:', error);
-          // On critical errors, try a last resort session restore
-          try {
-            const restored = await this.restoreSession();
-            if (restored) {
-              await forceReconnectSupabase();
-              eventBus.publish(EVENTS.DATA_REFRESH_NEEDED);
-            }
-          } catch (restoreError) {
-            console.error('Failed last resort session restore:', restoreError);
-          }
         } finally {
-          // Update the last active time
           await this.updateLastActiveTime();
           this.recoveryInProgress = false;
         }
@@ -273,45 +245,17 @@ class CapacitorAuthService {
       }
     });
     
-    // Also add visibility change event listener if in browser context
+    // For browser visibility changes, we'll delegate to the connection manager
+    // Initialize the connection manager
     if (typeof document !== 'undefined') {
-      // First remove any existing listener
+      // Remove any existing visibility change listener
       if (this.visibilityChangeListener) {
         document.removeEventListener('visibilitychange', this.visibilityChangeListener);
+        this.visibilityChangeListener = null;
       }
       
-      // Create the listener function
-      this.visibilityChangeListener = async () => {
-        if (document.visibilityState === 'visible') {
-          console.log('Tab is now visible, checking connection');
-          
-          // Skip if recovery is already in progress
-          if (this.recoveryInProgress) {
-            console.log('Recovery already in progress, skipping visibility change handler');
-            return;
-          }
-          
-          this.recoveryInProgress = true;
-          
-          try {
-            // For visibility change, we'll do a lighter recovery
-            // Just ensure client session and reconnect
-            const sessionOk = await this.ensureClientSession();
-            const reconnected = await forceReconnectSupabase();
-            
-            if (sessionOk && reconnected) {
-              console.log('Connection restored after visibility change');
-            }
-          } catch (error) {
-            console.error('Error handling visibility change:', error);
-          } finally {
-            this.recoveryInProgress = false;
-          }
-        }
-      };
-      
-      // Add the listener
-      document.addEventListener('visibilitychange', this.visibilityChangeListener);
+      // Let the central connection manager handle visibility changes
+      initConnectionManager('capacitorAuthService.ts');
     }
   }
 
